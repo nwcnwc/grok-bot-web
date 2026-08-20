@@ -154,6 +154,27 @@ python3 reply.py "hello from the agent"
 
 `reply.py` also accepts `--id` and `--text`.
 
+## Windows Grok Bot (broken webhook card)
+
+Clone and run this tree on the Grok Bot machine — the Linux computer the agent uses — not inside Program Files.
+
+Python 3.10+, stdlib only. Bind Tailscale IPv4 or `127.0.0.1`. Never `0.0.0.0`. Port `8780`.
+
+```bash
+export TAILSCALE_IP="$(tailscale ip -4)"
+python3 server.py
+```
+
+On current Windows Grok Bot, opening a webhook routine card crashes with `TypeError: Cannot read properties of undefined (reading 'platform')`. That UI never got a webhook URL from Cursor. Do not try to copy one from the card.
+
+Wake does not need that card. It is local, the same path as Test run:
+
+1. Make a webhook routine (name it e.g. `grok-bot-web inbound`). The prompt should read `DATA_DIR/inbox.json` (`id`, `text`, `ts`, `source`). If the flag is `0`, or that `id` already has an answer in `reply.json`, stay silent. Otherwise treat the line as a normal chat message and write back with `python3 reply.py --id <inbox-id> --text "<reply>"`. The page polls for about 120s.
+2. Point `GROK_BOT_WEB_ON_SEND` at a local script that POSTs `http://127.0.0.1:1340/api/runAgentAutomationNow` with `{id: <this agent id>, automationId: <that routine id>}` and the local gateway bearer from `gateway.json`. Do not print the token. Do not commit secrets.
+3. Send one line from `http://<tailscale-ip>:8780`. If a reply lands, wake works even while the Windows card still crashes.
+
+An asar patch can hide the card crash. It is optional and **not** required for wake. Do not add an asar to this repo.
+
 ## License
 
 MIT. Copyright (c) 2026 grok-bot-web contributors. See [LICENSE](LICENSE).
