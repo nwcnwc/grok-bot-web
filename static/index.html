@@ -44,7 +44,7 @@
       padding: calc(0.85rem + env(safe-area-inset-top)) 1rem 0.85rem;
       border-bottom: 1px solid var(--line);
       display: flex;
-      align-items: baseline;
+      align-items: flex-start;
       justify-content: space-between;
       gap: 0.75rem;
     }
@@ -55,9 +55,15 @@
       letter-spacing: -0.02em;
     }
     header p {
-      margin: 0;
+      margin: 0.15rem 0 0;
       color: var(--muted);
       font-size: 0.8rem;
+    }
+    .hdr-right {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 0.35rem;
     }
     #status {
       color: var(--muted);
@@ -65,6 +71,16 @@
     }
     #status.ok { color: var(--accent); }
     #status.err { color: var(--danger); }
+    #clear {
+      border: 1px solid var(--line);
+      background: transparent;
+      color: var(--muted);
+      border-radius: 0.55rem;
+      padding: 0.2rem 0.55rem;
+      font: inherit;
+      font-size: 0.75rem;
+      min-width: 0;
+    }
     #log {
       flex: 1;
       overflow-y: auto;
@@ -101,12 +117,44 @@
       color: var(--muted);
       margin-bottom: 0.2rem;
     }
+    .atts {
+      margin-top: 0.45rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+    .atts img {
+      display: block;
+      max-width: min(18rem, 100%);
+      max-height: 16rem;
+      border-radius: 0.5rem;
+    }
+    .filechip {
+      color: var(--accent);
+      font-size: 0.8rem;
+    }
+    a.filechip { text-decoration: none; }
+    #picked {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      padding: 0 0.75rem;
+    }
+    #picked:empty { display: none; }
+    .pick {
+      font-size: 0.75rem;
+      color: var(--muted);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 0.15rem 0.5rem;
+    }
     form {
       display: flex;
       gap: 0.5rem;
       padding: 0.75rem 0.75rem calc(0.75rem + env(safe-area-inset-bottom));
       border-top: 1px solid var(--line);
       background: #12171e;
+      align-items: flex-end;
     }
     textarea {
       flex: 1;
@@ -120,6 +168,19 @@
       color: var(--text);
       font: inherit;
     }
+    .file-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--line);
+      border-radius: 0.75rem;
+      min-width: 2.7rem;
+      height: 2.7rem;
+      color: var(--muted);
+      cursor: pointer;
+      user-select: none;
+    }
+    .file-btn input { display: none; }
     button {
       border: 0;
       border-radius: 0.75rem;
@@ -128,10 +189,9 @@
       color: var(--accent-ink);
       font-weight: 650;
       min-width: 4.5rem;
+      height: 2.7rem;
     }
-    button:disabled {
-      opacity: 0.45;
-    }
+    button:disabled { opacity: 0.45; }
   </style>
 </head>
 <body>
@@ -141,82 +201,249 @@
         <h1>grok-bot-web</h1>
         <p>Local drop-pipe chat. No xAI / Cursor API calls.</p>
       </div>
-      <div id="status">checking…</div>
+      <div class="hdr-right">
+        <button type="button" id="clear">Clear</button>
+        <div id="status">checking…</div>
+      </div>
     </header>
     <div id="log">
-      <div class="empty" id="empty">Send a message. A local Grok Bot / agent watcher should read the inbox and write a reply.</div>
+      <div class="empty" id="empty">Send a message or attach a file. A local Grok Bot / agent watcher should read the inbox and write a reply.</div>
     </div>
+    <div id="picked"></div>
     <form id="form">
+      <label class="file-btn" title="Attach files">
+        +
+        <input type="file" id="files" multiple>
+      </label>
       <textarea id="text" rows="1" placeholder="Message…" autocomplete="off"></textarea>
       <button type="submit" id="send">Send</button>
     </form>
   </div>
   <script>
+    const STORE_KEY = "grok-bot-web:v1";
     const log = document.getElementById("log");
     const empty = document.getElementById("empty");
     const form = document.getElementById("form");
     const textEl = document.getElementById("text");
     const sendBtn = document.getElementById("send");
     const statusEl = document.getElementById("status");
+    const clearBtn = document.getElementById("clear");
+    const fileEl = document.getElementById("files");
+    const pickedEl = document.getElementById("picked");
+
+    let messages = [];
+    let clearedAt = 0;
+    let picked = [];
 
     function setStatus(text, cls) {
       statusEl.textContent = text;
       statusEl.className = cls || "";
     }
 
-    function addMsg(role, text) {
-      if (empty) empty.remove();
+    function loadState() {
+      try {
+        const data = JSON.parse(localStorage.getItem(STORE_KEY) || "null");
+        if (!data || typeof data !== "object") return;
+        if (Array.isArray(data.messages)) messages = data.messages;
+        clearedAt = Number(data.clearedAt) || 0;
+      } catch {
+        messages = [];
+        clearedAt = 0;
+      }
+    }
+
+    function saveState() {
+      try {
+        localStorage.setItem(STORE_KEY, JSON.stringify({
+          version: 1,
+          clearedAt,
+          messages,
+        }));
+      } catch {
+        /* quota or private mode */
+      }
+    }
+
+    function isImageName(name) {
+      return /\.(png|jpe?g|gif|webp)$/i.test(name || "");
+    }
+
+    function fileUrl(file) {
+      if (file && file.url) return file.url;
+      const p = (file && file.path) || "";
+      const base = String(p).split("/").pop();
+      return base ? "/api/uploads/" + encodeURIComponent(base) : "";
+    }
+
+    function renderFiles(el, files) {
+      if (!files || !files.length) return;
+      const wrap = document.createElement("div");
+      wrap.className = "atts";
+      files.forEach((file) => {
+        const name = file.name || "file";
+        if (isImageName(name) && fileUrl(file)) {
+          const img = document.createElement("img");
+          img.src = fileUrl(file);
+          img.alt = name;
+          wrap.appendChild(img);
+        } else if (fileUrl(file)) {
+          const a = document.createElement("a");
+          a.className = "filechip";
+          a.href = fileUrl(file);
+          a.textContent = name;
+          a.target = "_blank";
+          a.rel = "noopener";
+          wrap.appendChild(a);
+        } else {
+          const chip = document.createElement("div");
+          chip.className = "filechip";
+          chip.textContent = name;
+          wrap.appendChild(chip);
+        }
+      });
+      el.appendChild(wrap);
+    }
+
+    function renderAll() {
+      log.innerHTML = "";
+      if (!messages.length) {
+        const el = document.createElement("div");
+        el.className = "empty";
+        el.id = "empty";
+        el.textContent = "Send a message or attach a file. A local Grok Bot / agent watcher should read the inbox and write a reply.";
+        log.appendChild(el);
+        return;
+      }
+      messages.forEach((msg) => appendBubble(msg, false));
+      log.scrollTop = log.scrollHeight;
+    }
+
+    function appendBubble(msg, scroll) {
+      const emptyEl = document.getElementById("empty");
+      if (emptyEl) emptyEl.remove();
       const el = document.createElement("div");
-      el.className = "msg " + role;
+      el.className = "msg " + (msg.role === "me" ? "me" : "bot");
       const who = document.createElement("span");
       who.className = "who";
-      who.textContent = role === "me" ? "you" : "bot";
+      who.textContent = msg.role === "me" ? "you" : "bot";
       el.appendChild(who);
-      el.appendChild(document.createTextNode(text));
+      if (msg.text) el.appendChild(document.createTextNode(msg.text));
+      renderFiles(el, msg.files);
       log.appendChild(el);
-      log.scrollTop = log.scrollHeight;
+      if (scroll !== false) log.scrollTop = log.scrollHeight;
+    }
+
+    function addMsg(role, text, extra) {
+      const msg = Object.assign({
+        role,
+        text: text || "",
+        ts: Date.now() / 1000,
+      }, extra || {});
+      messages.push(msg);
+      appendBubble(msg, true);
+      saveState();
+      return msg;
+    }
+
+    function hasBotReply(id) {
+      return messages.some((m) => m.role === "bot" && m.id === id);
+    }
+
+    function pendingIds() {
+      return messages
+        .filter((m) => m.role === "me" && m.id && !hasBotReply(m.id))
+        .map((m) => m.id);
+    }
+
+    function mergeReply(reply) {
+      if (!reply || typeof reply !== "object") return false;
+      const id = reply.id;
+      if (!id || hasBotReply(id)) return false;
+      const mine = messages.some((m) => m.role === "me" && m.id === id);
+      const ts = Number(reply.ts) || 0;
+      if (!mine) {
+        if (!messages.length) return false;
+        if (clearedAt && ts && ts <= clearedAt) return false;
+      }
+      addMsg("bot", reply.text || "", { id, ts: ts || Date.now() / 1000 });
+      return true;
+    }
+
+    function renderPicked() {
+      pickedEl.innerHTML = "";
+      picked.forEach((file) => {
+        const el = document.createElement("span");
+        el.className = "pick";
+        el.textContent = file.name;
+        pickedEl.appendChild(el);
+      });
     }
 
     async function health() {
       try {
         const r = await fetch("/api/health");
         if (!r.ok) throw new Error("health " + r.status);
-        setStatus("online", "ok");
+        if (pendingIds().length) setStatus("waiting…", "");
+        else setStatus("online", "ok");
       } catch {
         setStatus("offline", "err");
       }
     }
 
-    async function pollReply(id) {
-      const started = Date.now();
-      while (Date.now() - started < 120000) {
-        const r = await fetch("/api/reply?id=" + encodeURIComponent(id));
-        if (r.status === 200) return r.json();
-        if (r.status !== 204) throw new Error("reply " + r.status);
-        await new Promise((res) => setTimeout(res, 500));
+    async function syncReplies() {
+      let added = false;
+      try {
+        const hist = await fetch("/api/history");
+        if (hist.ok) {
+          const data = await hist.json();
+          (data.replies || []).forEach((reply) => {
+            if (mergeReply(reply)) added = true;
+          });
+        }
+      } catch { /* keep polling */ }
+      try {
+        const latest = await fetch("/api/reply");
+        if (latest.status === 200) {
+          if (mergeReply(await latest.json())) added = true;
+        }
+      } catch { /* keep polling */ }
+      for (const id of pendingIds()) {
+        try {
+          const r = await fetch("/api/reply?id=" + encodeURIComponent(id));
+          if (r.status === 200 && mergeReply(await r.json())) added = true;
+        } catch { /* keep polling */ }
       }
-      throw new Error("timed out waiting for reply");
+      if (pendingIds().length) setStatus("waiting…", "");
+      else if (statusEl.className !== "err") setStatus("online", "ok");
+      return added;
     }
 
     form.addEventListener("submit", async (ev) => {
       ev.preventDefault();
       const text = textEl.value.trim();
-      if (!text) return;
+      const files = picked.slice();
+      if (!text && !files.length) return;
       sendBtn.disabled = true;
-      addMsg("me", text);
+      const localFiles = files.map((f) => ({ name: f.name }));
+      const mine = addMsg("me", text, { files: localFiles.length ? localFiles : undefined });
       textEl.value = "";
+      picked = [];
+      fileEl.value = "";
+      renderPicked();
       try {
-        const r = await fetch("/api/send", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text }),
-        });
+        const fd = new FormData();
+        fd.append("text", text);
+        files.forEach((f) => fd.append("files", f, f.name));
+        const r = await fetch("/api/send", { method: "POST", body: fd });
         const data = await r.json();
         if (!r.ok) throw new Error(data.error || "send failed");
+        mine.id = data.id;
+        mine.ts = data.ts || mine.ts;
+        if (Array.isArray(data.files) && data.files.length) mine.files = data.files;
+        saveState();
+        renderAll();
         setStatus("waiting…", "");
-        const reply = await pollReply(data.id);
-        addMsg("bot", reply.text || "");
-        setStatus("online", "ok");
+        await syncReplies();
       } catch (err) {
         addMsg("bot", String(err.message || err));
         setStatus("error", "err");
@@ -226,6 +453,19 @@
       }
     });
 
+    fileEl.addEventListener("change", () => {
+      picked = Array.from(fileEl.files || []);
+      renderPicked();
+    });
+
+    clearBtn.addEventListener("click", () => {
+      messages = [];
+      clearedAt = Date.now() / 1000;
+      saveState();
+      renderAll();
+      setStatus("online", "ok");
+    });
+
     textEl.addEventListener("keydown", (ev) => {
       if (ev.key === "Enter" && !ev.shiftKey) {
         ev.preventDefault();
@@ -233,8 +473,12 @@
       }
     });
 
+    loadState();
+    renderAll();
     health();
+    syncReplies();
     setInterval(health, 15000);
+    setInterval(syncReplies, 1500);
     textEl.focus();
   </script>
 </body>
