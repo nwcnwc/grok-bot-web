@@ -134,12 +134,10 @@ MIT. Copyright (c) 2026 grok-bot-web contributors. See [LICENSE](LICENSE).
 
 ## Contribute
 
-Work on `main`.
+Fork, make the change, open a pull request. We'll review it.
 
-1. Fork or clone this repo.
-2. Keep the server stdlib-only and the UI one column / mobile-friendly.
-3. Do not add xAI or Cursor API calls. This UI is a drop pipe, not a hosted model client.
-4. Do not bind `0.0.0.0` by default. Do not commit `data/`, `.env`, or personal identifiers (names, emails, phones, chat handles, workspace names, Tailscale IPs).
-5. Open a pull request against `main` with a short description of the change.
+1. Keep the server stdlib-only and the UI one column / mobile-friendly.
+2. Do not add xAI or Cursor API calls. This UI is a drop pipe, not a hosted model client.
+3. Do not bind `0.0.0.0` by default. Do not commit `data/`, `.env`, or personal identifiers (names, emails, phones, chat handles, workspace names, Tailscale IPs).
 
 Small, reviewable patches are welcome: protocol hardening, accessibility, a clearer mobile layout, or a better watcher example.
